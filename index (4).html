@@ -1,0 +1,331 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PONG B/W</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: pan-y;
+        }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        canvas {
+            display: block;
+            border: 2px solid #fff;
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 800 / 400;
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="pongCanvas" width="800" height="400"></canvas>
+    <script>
+        (function(){
+            const canvas = document.getElementById('pongCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // ---------- pure black & white parameters ----------
+            const WIN_SCORE = 11;
+            const PADDLE_WIDTH = 10;
+            const PADDLE_HEIGHT = 80;
+            const BALL_SIZE = 10;
+            const PADDLE_SPEED = 8;
+            const AI_SPEED = 5.6;
+
+            // positions
+            let leftPaddleY = 160;
+            let rightPaddleY = 160;
+            let ballX = 400;
+            let ballY = 200;
+            let ballSpeedX = 5.2;
+            let ballSpeedY = 3.8;
+
+            // scores
+            let leftScore = 0;
+            let rightScore = 0;
+
+            // control flags
+            let upPressed = false;
+            let downPressed = false;
+
+            // pause state
+            let paused = false;
+
+            // touch tracking
+            let touchIdentifier = null;
+
+            // ---------- reset ball ----------
+            function resetBall(direction = 1) {
+                ballX = 400;
+                ballY = 200;
+                ballSpeedX = 5.2 * direction;
+                ballSpeedY = (Math.random() * 4 + 2) * (Math.random() > 0.5 ? 1 : -1);
+            }
+
+            // ---------- draw - only black & white ----------
+            function draw() {
+                // black background
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, 800, 400);
+
+                // solid white center line (no dash, pure white)
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(398, 0, 4, 400);     
+
+                // left paddle (white)
+                ctx.fillRect(20, leftPaddleY, PADDLE_WIDTH, PADDLE_HEIGHT);
+                // right paddle (white)
+                ctx.fillRect(770, rightPaddleY, PADDLE_WIDTH, PADDLE_HEIGHT);
+                // ball (white)
+                ctx.fillRect(ballX - BALL_SIZE/2, ballY - BALL_SIZE/2, BALL_SIZE, BALL_SIZE);
+
+                // ---------- score display: only white rectangles ----------
+                // left score: top-left area, 11 possible positions, each 10x10 square
+                for (let i = 0; i < leftScore; i++) {
+                    ctx.fillRect(10 + (i % 11) * 12, 10, 8, 8);
+                }
+                // right score: top-right area
+                for (let i = 0; i < rightScore; i++) {
+                    ctx.fillRect(730 - (i % 11) * 12, 10, 8, 8);
+                }
+
+                // ---------- pause indicator: only white ----------
+                if (paused) {
+                    // two vertical bars, absolutely no text
+                    ctx.fillRect(390, 180, 6, 40);
+                    ctx.fillRect(404, 180, 6, 40);
+                }
+            }
+
+            // ---------- update game logic ----------
+            function update() {
+                if (paused) return;
+
+                // move left paddle (player)
+                if (upPressed && leftPaddleY > 0) {
+                    leftPaddleY -= PADDLE_SPEED;
+                }
+                if (downPressed && leftPaddleY < 400 - PADDLE_HEIGHT) {
+                    leftPaddleY += PADDLE_SPEED;
+                }
+
+                // AI for right paddle
+                let targetY = ballY - PADDLE_HEIGHT / 2;
+                if (rightPaddleY + PADDLE_HEIGHT/2 < ballY) {
+                    rightPaddleY += AI_SPEED;
+                } else if (rightPaddleY + PADDLE_HEIGHT/2 > ballY) {
+                    rightPaddleY -= AI_SPEED;
+                }
+                // keep inside
+                if (rightPaddleY < 0) rightPaddleY = 0;
+                if (rightPaddleY > 400 - PADDLE_HEIGHT) rightPaddleY = 400 - PADDLE_HEIGHT;
+
+                // ball movement
+                ballX += ballSpeedX;
+                ballY += ballSpeedY;
+
+                // top / bottom bounce
+                if (ballY - BALL_SIZE/2 <= 0 || ballY + BALL_SIZE/2 >= 400) {
+                    ballSpeedY = -ballSpeedY;
+                    ballY += ballSpeedY > 0 ? 2 : -2; 
+                }
+
+                // left paddle collision
+                if (ballX - BALL_SIZE/2 <= 20 + PADDLE_WIDTH && 
+                    ballX - BALL_SIZE/2 >= 20 && 
+                    ballY + BALL_SIZE/2 >= leftPaddleY && 
+                    ballY - BALL_SIZE/2 <= leftPaddleY + PADDLE_HEIGHT) {
+                    
+                    let relativeHit = ballY - (leftPaddleY + PADDLE_HEIGHT/2);
+                    let angleFactor = relativeHit * 0.15;
+                    ballSpeedX = -ballSpeedX;
+                    ballSpeedX *= 1.02;
+                    ballSpeedY = angleFactor + (ballSpeedY * 0.9);
+                    
+                    // keep speed reasonable
+                    if (Math.abs(ballSpeedX) < 4) ballSpeedX = ballSpeedX > 0 ? 4 : -4;
+                    if (Math.abs(ballSpeedX) > 12) ballSpeedX = ballSpeedX > 0 ? 12 : -12;
+                    if (Math.abs(ballSpeedY) > 10) ballSpeedY = ballSpeedY > 0 ? 10 : -10;
+                    
+                    ballX = 20 + PADDLE_WIDTH + BALL_SIZE/2 + 1;
+                }
+
+                // right paddle collision
+                if (ballX + BALL_SIZE/2 >= 770 && 
+                    ballX + BALL_SIZE/2 <= 770 + PADDLE_WIDTH && 
+                    ballY + BALL_SIZE/2 >= rightPaddleY && 
+                    ballY - BALL_SIZE/2 <= rightPaddleY + PADDLE_HEIGHT) {
+                    
+                    let relativeHit = ballY - (rightPaddleY + PADDLE_HEIGHT/2);
+                    let angleFactor = relativeHit * 0.15;
+                    ballSpeedX = -ballSpeedX;
+                    ballSpeedX *= 1.02;
+                    ballSpeedY = angleFactor + (ballSpeedY * 0.9);
+                    
+                    if (Math.abs(ballSpeedX) < 4) ballSpeedX = ballSpeedX > 0 ? 4 : -4;
+                    if (Math.abs(ballSpeedX) > 12) ballSpeedX = ballSpeedX > 0 ? 12 : -12;
+                    if (Math.abs(ballSpeedY) > 10) ballSpeedY = ballSpeedY > 0 ? 10 : -10;
+                    
+                    ballX = 770 - BALL_SIZE/2 - 1;
+                }
+
+                // left score (ball out on right side)
+                if (ballX + BALL_SIZE/2 >= 800) {
+                    leftScore++;
+                    if (leftScore >= WIN_SCORE) {
+                        leftScore = 0;
+                        rightScore = 0;
+                    }
+                    resetBall(-1);
+                }
+
+                // right score (ball out on left side)
+                if (ballX - BALL_SIZE/2 <= 0) {
+                    rightScore++;
+                    if (rightScore >= WIN_SCORE) {
+                        leftScore = 0;
+                        rightScore = 0;
+                    }
+                    resetBall(1);
+                }
+            }
+
+            // ---------- animation loop ----------
+            function gameLoop() {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+            gameLoop();
+
+            // ---------- keyboard controls ----------
+            window.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowUp') {
+                    upPressed = true;
+                    e.preventDefault();
+                }
+                if (e.key === 'ArrowDown') {
+                    downPressed = true;
+                    e.preventDefault();
+                }
+                if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
+                    paused = !paused;
+                    e.preventDefault();
+                }
+            });
+
+            window.addEventListener('keyup', function(e) {
+                if (e.key === 'ArrowUp') {
+                    upPressed = false;
+                    e.preventDefault();
+                }
+                if (e.key === 'ArrowDown') {
+                    downPressed = false;
+                    e.preventDefault();
+                }
+                if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
+                    e.preventDefault();
+                }
+            });
+
+            // ---------- touch controls (pure black/white, no text) ----------
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                let touch = e.touches[0];
+                if (!touch) return;
+                
+                touchIdentifier = touch.identifier;
+                let rect = canvas.getBoundingClientRect();
+                let scaleX = canvas.width / rect.width;
+                let scaleY = canvas.height / rect.height;
+                let canvasY = (touch.clientY - rect.top) * scaleY;
+
+                // left paddle follows finger vertically (pure black/white interaction)
+                if (canvasY >= 0 && canvasY <= 400) {
+                    let newY = canvasY - PADDLE_HEIGHT/2;
+                    if (newY < 0) newY = 0;
+                    if (newY > 400 - PADDLE_HEIGHT) newY = 400 - PADDLE_HEIGHT;
+                    leftPaddleY = newY;
+                }
+
+                // double tap or two fingers pause (no text)
+                if (e.touches.length >= 2) {
+                    paused = !paused;
+                }
+            });
+
+            canvas.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                let touch = null;
+                if (touchIdentifier !== null) {
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === touchIdentifier) {
+                            touch = e.touches[i];
+                            break;
+                        }
+                    }
+                }
+                if (!touch) touch = e.touches[0];
+                if (!touch) return;
+
+                let rect = canvas.getBoundingClientRect();
+                let scaleX = canvas.width / rect.width;
+                let scaleY = canvas.height / rect.height;
+                let canvasY = (touch.clientY - rect.top) * scaleY;
+
+                if (canvasY >= 0 && canvasY <= 400) {
+                    let newY = canvasY - PADDLE_HEIGHT/2;
+                    if (newY < 0) newY = 0;
+                    if (newY > 400 - PADDLE_HEIGHT) newY = 400 - PADDLE_HEIGHT;
+                    leftPaddleY = newY;
+                }
+            });
+
+            canvas.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                // if the tracked touch is removed, clear identifier
+                if (touchIdentifier !== null) {
+                    let stillActive = false;
+                    for (let i = 0; i < e.touches.length; i++) {
+                        if (e.touches[i].identifier === touchIdentifier) {
+                            stillActive = true;
+                            break;
+                        }
+                    }
+                    if (!stillActive) {
+                        touchIdentifier = null;
+                    }
+                }
+            });
+
+            canvas.addEventListener('touchcancel', function(e) {
+                e.preventDefault();
+                touchIdentifier = null;
+            });
+
+            // disable context menu / selection
+            canvas.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+            });
+
+            window.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'p' || e.key === 'P') {
+                    e.preventDefault();
+                }
+            }, false);
+
+        })();
+    </script>
+</body>
+</html>
